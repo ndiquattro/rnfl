@@ -313,12 +313,10 @@ writeLines(ctxt)
 client_id <- keys["reddit", "client"]
 secret <- keys["reddit", "secret"]
 
-curl -X POST -d 'grant_type=password&username=reddit_bot&password=snoo' --user 'p-jcoLKBynTLew:gko_LXELoV07ZBNUXrvWZfzE3aI' https://ssl.reddit.com/api/v1/access_token
-
 postForm("https://ssl.reddit.com/api/v1/access_token?grant_type=password",
          username = keys["reddit", "user"],
          password = keys["reddit", "pass"],
-         .opts = list(userpwd = paste(keys["reddit", "client"],
+         .opts = list(u = paste(keys["reddit", "client"],
                                       keys["reddit", "secret"],
                                       sep = ":"))
          )
