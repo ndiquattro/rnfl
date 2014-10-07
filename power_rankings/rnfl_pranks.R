@@ -1,8 +1,10 @@
 # Visualization for r/NFL Power Rankings
+# Fall - 2014
 
 # Load Libraries
 library(dplyr)
 library(ggplot2)
+library(quatts)
 
 # Functions ---------------------------------------------------------------
 
@@ -21,81 +23,66 @@ DataGrabber <- function(url) {
   sdat <- read.csv(text = gdat, header=TRUE, stringsAsFactors=FALSE)
 }
 
-DataLoader <- function(folder, expr) {
-  # Loads files within a folder that matches a regular expression and combines
-  # them into one data frame.
-  # Args:
-  #   folder: path to folder that contains data files.
-  #   expr: regular expression that filters which files are loaded.
-  # Returns:
-  #   datf: a data.frame
+# Make text file of latest week -------------------------------------------
+library(XML)
+library(jsonlite)
 
-  # Find files
-  file.list <- list.files(folder, expr, full.names=TRUE)
+# Initial comment grab
+coms <- fromJSON('http://www.reddit.com/r/nfl/new/.json')
 
-  # Make read.csv function
-  Reader <- function(files){
-    read.csv(files, header=TRUE, stringsAsFactors=FALSE)
-  }
+# While loop until the rankings have posted
+while (sum(coms$data$children$data$author == "NFLPowerRankers") == 0) {
+  # Display Time
+  print(Sys.time())
 
-  # Apply Reader to file.list
-  datf <- do.call("rbind", lapply(file.list, Reader))
+  # Wait for a bit
+  Sys.sleep(10)
+
+  # Get recent comments in r/NFL
+  coms <- fromJSON('http://www.reddit.com/r/nfl/new/.json')
 }
 
-# Make text file of latest week -------------------------------------------
-# library(XML)
-# library(RCurl)
-# library(jsonlite)
-#
-# # Initial comment grab
-# coms <- fromJSON(getURL('http://www.reddit.com/r/nfl/new/.json'))
-#
-# # While loop until the rankings have posted
-# while (sum(coms$data$children$data$author == "NFLPowerRankers") == 0) {
-#   # Display Time
-#   print(Sys.time())
-#
-#   # Wait for a bit
-#   Sys.sleep(30)
-#
-#   # Get recent comments in r/NFL
-#   coms <- fromJSON(getURL('http://www.reddit.com/r/nfl/new/.json'))
-# }
-#
-# # Find which index has rankings
-# useridx <- which(coms$data$children$data$author == "NFLPowerRankers")
-#
-# # Pull self text and title
-# stxt <- coms$data$children$data$selftext_html[[useridx]]
-#   stxt <- gsub("&lt;", "<", stxt)
-#   stxt <- gsub("&gt;", ">", stxt)
-#   stxt <- gsub("&amp;", "&", stxt)
-#
-# # Pull current week out of post title
-# cur.week <- coms$data$children$data$title[[useridx]]
-# cur.week <- max(unique(as.numeric(unlist(cur.week))), na.rm = TRUE)
-#
-# # Parse HTML
-# parsed <- htmlParse(stxt)
-#
-# # Find gdoc link
-# doclink <- as.character(getNodeSet(parsed, "//a[contains(@href, 'docs.google.com')]/@href")[[1]])
-#   # replace html
-#   doclink <- gsub("html", "csv", doclink)
-#
-# # Grab data
-# gdat <- DataGrabber(doclink) %>%
-#           select(team = Teams, med.scr =Median, mn.scr = Mean.,
-#                  sd.scr = Standard.Deviation)
-#
-# # Write to file
-# fname <- paste0("data/week", cur.week, ".csv")
-# write.csv(gdat, fname, row.names = FALSE)
+# Send E-mail when the post has been found
+system("say power rankings have been posted!")
+
+# Find which index has rankings
+useridx <- which(coms$data$children$data$author == "NFLPowerRankers")
+
+# Pull self text and title
+stxt <- coms$data$children$data$selftext_html[[useridx]]
+  stxt <- gsub("&lt;", "<", stxt)
+  stxt <- gsub("&gt;", ">", stxt)
+  stxt <- gsub("&amp;", "&", stxt)
+
+# Pull current week out of post title
+cur.week <- coms$data$children$data$title[[useridx]]
+cur.week <- max(unique(as.numeric(unlist(cur.week))), na.rm = TRUE)
+
+# Save thread ID for posting to reddit
+thread.id <- coms$data$children$data$id[[useridx]]
+
+# Parse HTML
+parsed <- htmlParse(stxt)
+
+# Find gdoc link
+doclink <- as.character(
+      getNodeSet(parsed, "//a[contains(@href, 'docs.google.com')]/@href")[[1]])
+  # replace html
+  doclink <- gsub("html", "csv", doclink)
+
+# Grab data
+gdat <- DataGrabber(doclink) %>%
+          select(team = Teams, med.scr =Median, mn.scr = Mean.,
+                 sd.scr = Standard.Deviation)
+
+# Write to file
+fname <- paste0("data/week", cur.week, ".csv")
+write.csv(gdat, fname, row.names = FALSE)
 
 # Load Data ---------------------------------------------------------------
 
 # Load Ranks
-rawdat <- DataLoader("data", "week*")
+rawdat <- dataloader("data", "week*")
   # Add Week Counter
   cur.week <- (dim(rawdat)[1] / 32) - 1
   rawdat$week <- expand.grid(1:32, 0:cur.week)$Var2
@@ -106,29 +93,21 @@ team.colors <- read.csv("nfl_colors.csv", stringsAsFactors = FALSE)
   tcols <- team.colors$color1
   names(tcols) <- team.colors$team
 
-# Define division relationships
-nfc.n <- c("Packers", "Lions", "Bears", "Vikings")
-nfc.e <- c("Cowboys", "Eagles", "Giants", "Redskins")
-nfc.s <- c("Saints", "Falcons", "Panthers", "Buccaneers")
-nfc.w <- c("49ers", "Seahawks", "Rams", "Cardinals")
-
-afc.n <- c("Bengals", "Browns", "Steelers", "Ravens")
-afc.e <- c("Patriots", "Dolphins", "Jets", "Bills")
-afc.s <- c("Texans", "Jaguars", "Titans", "Colts")
-afc.w <- c("Raiders", "Broncos", "Chargers", "Chiefs")
+# Load team info
+tinfo <- read.csv("../team_info.csv", stringsAsFactors = FALSE)
+  # Change names to work with this script
+  names(tinfo) <- c("city", "team", "conf", "div")
 
 # Find quantiles
 quants <- quantile(seq(1,32,1))
 
+# Combine team info with ranks
+combod <- left_join(rawdat, tinfo, by = "team")
+
 # Assign to pranks data
 pranks <-
-  rawdat %>%
+  combod %>%
     mutate(
-      conf = ifelse(team %in% c(nfc.n, nfc.e, nfc.s, nfc.w), "NFC", "AFC"),
-      div = ifelse(team %in% c(nfc.w, afc.w), "West", NA),
-      div = ifelse(team %in% c(nfc.e, afc.e), "East", div),
-      div = ifelse(team %in% c(nfc.n, afc.n), "North", div),
-      div = ifelse(team %in% c(nfc.s, afc.s), "South", div),
       cd = paste(conf, div, sep=" "),
       conf = factor(conf, c("NFC", "AFC")),
       div = factor(div, c("North", "East", "South", "West")) ) %>%
@@ -230,8 +209,8 @@ HistPlot <- function(div){
           labs(x = "Week", y = "Power Ranking", title = div)
 
   # Save plot
-   #filen <- paste0(spath,"/", div, ".png")
-   #ggsave(filen, cplot, height = 4, width = 8)
+   filen <- paste0(spath,"/", div, ".png")
+   ggsave(filen, cplot, height = 4, width = 8)
 }
 
 # Make plot for each division
@@ -239,14 +218,13 @@ hplots <- lapply(unique(pranks$cd), HistPlot)
 
 # Save Plots --------------------------------------------------------------
 
-# # Save Current week plots
-# ggsave(paste0(spath, "/overall_ranks.png"), oranks.plot, height = 6, width = 10)
-# ggsave(paste0(spath, "/div_mean_ranks.png"), mndiv.plot, height = 4, width = 8)
-# ggsave(paste0(spath, "/divranks.png"), bydiv.plot, height = 4, width = 8)
-#
-# # Save overall history plot
-# ggsave(paste0(spath, "/overall_hist1.png"), hplot, height = 10, width = 5)
+# Save Current week plots
+ggsave(paste0(spath, "/overall_ranks.png"), oranks.plot, height = 6, width = 10)
+ggsave(paste0(spath, "/div_mean_ranks.png"), mndiv.plot, height = 4, width = 8)
+ggsave(paste0(spath, "/divranks.png"), bydiv.plot, height = 4, width = 8)
 
+# Save overall history plot
+ggsave(paste0(spath, "/overall_hist1.png"), hplot, height = 10, width = 5)
 
 # Upload images to imgur --------------------------------------------------
 library(imguR)
@@ -309,51 +287,30 @@ ctxt <- c("# Power Ranking PLOTS!",
 # Print markdown code
 writeLines(ctxt)
 
-# Auth with Reddit
-client_id <- keys["reddit", "client"]
-secret <- keys["reddit", "secret"]
-
-postForm("https://ssl.reddit.com/api/v1/access_token?grant_type=password",
-         username = keys["reddit", "user"],
-         password = keys["reddit", "pass"],
-         .opts = list(u = paste(keys["reddit", "client"],
-                                      keys["reddit", "secret"],
-                                      sep = ":"))
-         )
-
+# Post comment to reddit --------------------------------------------------
 library(httr)
-req <- POST("https://ssl.reddit.com/api/v1/access_token",
-             body = list(
-               grant_type = "password",
-               username = keys["reddit", "user"],
-               password = keys["reddit", "pass"]
-             ),
-             encode = "form",
-             authenticate(keys["reddit", "client"], keys["reddit", "secret"])
-        )
 
-rtoken <- content(req)
+# Grab oauth token
+rtoken <- content(
+            POST("https://ssl.reddit.com/api/v1/access_token",
+              body = list(
+                grant_type = "password",
+                username = keys["reddit", "user"],
+                password = keys["reddit", "pass"]
+              ),
+              encode = "form",
+              authenticate(keys["reddit", "client"], keys["reddit", "secret"])
+            ))
 
-test <- GET("https://oauth.reddit.com/api/v1/me",
-     add_headers(Authorization = paste("bearer",
-                                       rtoken$access_token, sep = " ")),
-     user_agent("PowerRanks Uploader by box_plot")
-     )
+# Make the post
+ahead <- paste(rtoken$token_type, rtoken$access_token, sep = " ")  # make auth
 
-test <- GET("https://oauth.reddit.com/api/v1/me",
-            add_headers(Authorization = paste("bearer",
-                                              rtoken$access_token, sep = " ")),
-            user_agent("PowerRanks Uploader by box_plot")
-)
+POST("https://oauth.reddit.com/api/comment",
+      body = list(
+        text = ctxt,
+        thing_id = paste0("t3_", thread.id),
+        api_type = "json"),
+      add_headers(Authorization = ahead),
+      user_agent("PowerRanks Uploader by box_plot"))
 
-pmakec <- POST("https://oauth.reddit.com/api/comment",
-               body = list(
-                 text = "Hello World",
-                 thing_id = "t3_2ibwp8",
-                 api_type = "json"),
-               add_headers(Authorization = paste("bearer",
-                                                 rtoken$access_token, sep = " ")),
-               user_agent("PowerRanks Uploader by box_plot")
-               )
-content(pmakec)
-
+system("say Comment posted!")
