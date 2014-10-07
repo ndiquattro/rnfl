@@ -230,8 +230,8 @@ HistPlot <- function(div){
           labs(x = "Week", y = "Power Ranking", title = div)
 
   # Save plot
-   filen <- paste0(spath,"/", div, ".png")
-   ggsave(filen, cplot, height = 4, width = 8)
+   #filen <- paste0(spath,"/", div, ".png")
+   #ggsave(filen, cplot, height = 4, width = 8)
 }
 
 # Make plot for each division
@@ -239,13 +239,13 @@ hplots <- lapply(unique(pranks$cd), HistPlot)
 
 # Save Plots --------------------------------------------------------------
 
-# Save Current week plots
-ggsave(paste0(spath, "/overall_ranks.png"), oranks.plot, height = 6, width = 10)
-ggsave(paste0(spath, "/div_mean_ranks.png"), mndiv.plot, height = 4, width = 8)
-ggsave(paste0(spath, "/divranks.png"), bydiv.plot, height = 4, width = 8)
-
-# Save overall history plot
-ggsave(paste0(spath, "/overall_hist1.png"), hplot, height = 10, width = 5)
+# # Save Current week plots
+# ggsave(paste0(spath, "/overall_ranks.png"), oranks.plot, height = 6, width = 10)
+# ggsave(paste0(spath, "/div_mean_ranks.png"), mndiv.plot, height = 4, width = 8)
+# ggsave(paste0(spath, "/divranks.png"), bydiv.plot, height = 4, width = 8)
+#
+# # Save overall history plot
+# ggsave(paste0(spath, "/overall_hist1.png"), hplot, height = 10, width = 5)
 
 
 # Upload images to imgur --------------------------------------------------
@@ -320,3 +320,40 @@ postForm("https://ssl.reddit.com/api/v1/access_token?grant_type=password",
                                       keys["reddit", "secret"],
                                       sep = ":"))
          )
+
+library(httr)
+req <- POST("https://ssl.reddit.com/api/v1/access_token",
+             body = list(
+               grant_type = "password",
+               username = keys["reddit", "user"],
+               password = keys["reddit", "pass"]
+             ),
+             encode = "form",
+             authenticate(keys["reddit", "client"], keys["reddit", "secret"])
+        )
+
+rtoken <- content(req)
+
+test <- GET("https://oauth.reddit.com/api/v1/me",
+     add_headers(Authorization = paste("bearer",
+                                       rtoken$access_token, sep = " ")),
+     user_agent("PowerRanks Uploader by box_plot")
+     )
+
+test <- GET("https://oauth.reddit.com/api/v1/me",
+            add_headers(Authorization = paste("bearer",
+                                              rtoken$access_token, sep = " ")),
+            user_agent("PowerRanks Uploader by box_plot")
+)
+
+pmakec <- POST("https://oauth.reddit.com/api/comment",
+               body = list(
+                 text = "Hello World",
+                 thing_id = "t3_2ibwp8",
+                 api_type = "json"),
+               add_headers(Authorization = paste("bearer",
+                                                 rtoken$access_token, sep = " ")),
+               user_agent("PowerRanks Uploader by box_plot")
+               )
+content(pmakec)
+
