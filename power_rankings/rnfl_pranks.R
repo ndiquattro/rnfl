@@ -1,5 +1,7 @@
 # Visualization for r/NFL Power Rankings
 # Fall - 2014
+# Things that need fixing:
+#   reddit api only posts the last line of ctxt "error bars"
 
 # Load Libraries
 library(dplyr)
@@ -23,12 +25,27 @@ DataGrabber <- function(url) {
   sdat <- read.csv(text = gdat, header=TRUE, stringsAsFactors=FALSE)
 }
 
+WeekFinder <- function(curtime) {
+  # Define when NFL season starts
+  start <- lubridate::dmy("04-09-14")
+
+  # Today's date
+  today <- lubridate::ymd(curtime)
+
+  # Calculate which Week of the season we're in
+  return(cur.week <- lubridate::week(today) - lubridate::week(start))
+}
+
 # Make text file of latest week -------------------------------------------
 library(XML)
 library(jsonlite)
 
+# Define Current week
+cur.week <- WeekFinder(Sys.Date())
+
 # Initial comment grab
-coms <- fromJSON('http://www.reddit.com/r/nfl/new/.json')
+jurl <- 'http://www.reddit.com/r/nfl/new/.json'
+coms <- fromJSON(jurl)
 
 # While loop until the rankings have posted
 while (sum(coms$data$children$data$author == "NFLPowerRankers") == 0) {
@@ -39,40 +56,34 @@ while (sum(coms$data$children$data$author == "NFLPowerRankers") == 0) {
   Sys.sleep(10)
 
   # Get recent comments in r/NFL
-  coms <- fromJSON('http://www.reddit.com/r/nfl/new/.json')
+  coms <- fromJSON(jurl)
 }
 
-# Send E-mail when the post has been found
+# Announce when rankings have been posted.
 system("say power rankings have been posted!")
 
 # Find which index has rankings
 useridx <- which(coms$data$children$data$author == "NFLPowerRankers")
 
-# Pull self text and title
+# Pull self text and clean up HTML
 stxt <- coms$data$children$data$selftext_html[[useridx]]
   stxt <- gsub("&lt;", "<", stxt)
   stxt <- gsub("&gt;", ">", stxt)
   stxt <- gsub("&amp;", "&", stxt)
 
-# Pull current week out of post title
-cur.week <- coms$data$children$data$title[[useridx]]
-cur.week <- max(unique(as.numeric(unlist(cur.week))), na.rm = TRUE)
-
 # Save thread ID for posting to reddit
 thread.id <- coms$data$children$data$id[[useridx]]
 
-# Parse HTML
-parsed <- htmlParse(stxt)
-
 # Find gdoc link
 doclink <- as.character(
-      getNodeSet(parsed, "//a[contains(@href, 'docs.google.com')]/@href")[[1]])
-  # replace html
+             getNodeSet(htmlParse(stxt),
+                        "//a[contains(@href, 'docs.google.com')]/@href")[[1]])
+  # replace html with csv
   doclink <- gsub("html", "csv", doclink)
 
 # Grab data
 gdat <- DataGrabber(doclink) %>%
-          select(team = Teams, med.scr =Median, mn.scr = Mean.,
+          select(team = Teams, med.scr = Median, mn.scr = Mean.,
                  sd.scr = Standard.Deviation)
 
 # Write to file
@@ -82,9 +93,8 @@ write.csv(gdat, fname, row.names = FALSE)
 # Load Data ---------------------------------------------------------------
 
 # Load Ranks
-rawdat <- dataloader("data", "week*")
-  # Add Week Counter
-  cur.week <- (dim(rawdat)[1] / 32) - 1
+rawdat <- dataloader("data", "week*", header = TRUE)
+  # Add week column
   rawdat$week <- expand.grid(1:32, 0:cur.week)$Var2
 
 # Load Colors
@@ -98,32 +108,23 @@ tinfo <- read.csv("../team_info.csv", stringsAsFactors = FALSE)
   # Change names to work with this script
   names(tinfo) <- c("city", "team", "conf", "div")
 
-# Find quantiles
-quants <- quantile(seq(1,32,1))
-
-# Combine team info with ranks
-combod <- left_join(rawdat, tinfo, by = "team")
-
 # Assign to pranks data
-pranks <-
-  combod %>%
-    mutate(
-      cd = paste(conf, div, sep=" "),
-      conf = factor(conf, c("NFC", "AFC")),
-      div = factor(div, c("North", "East", "South", "West")) ) %>%
-      group_by(week) %>%
-      mutate(
-        quantrnk = ifelse(mn.scr < quants[2], 1, 99),
-        quantrnk = ifelse(mn.scr > quants[2] & mn.scr < quants[3], 2, quantrnk),
-        quantrnk = ifelse(mn.scr > quants[3] & mn.scr < quants[4], 3, quantrnk),
-        quantrnk = ifelse(mn.scr > quants[4], 4, quantrnk),
-        ovrank = rank(mn.scr) )%>%
-      group_by(week, cd) %>%
-      mutate(
-        divrank = factor(rank(mn.scr)) ) %>%
-      group_by(week, conf) %>%
-      mutate(
-        conf.mn = mean(mn.scr) )
+pranks <- rawdat %>%
+            left_join(., tinfo, by = "team") %>%
+            mutate(
+              cd = paste(conf, div, sep=" "),
+              conf = factor(conf, c("NFC", "AFC")),
+              div = factor(div, c("North", "East", "South", "West")) ) %>%
+            group_by(week) %>%
+            mutate(
+              ovrank = rank(med.scr, ties.method = "first"),
+              quantrnk = cut(mn.scr, quantile(mn.scr), 1:4, TRUE)) %>%
+            group_by(week, cd) %>%
+            mutate(
+              divrank = factor(rank(med.scr, ties.method = "first")) ) %>%
+            group_by(week, conf) %>%
+            mutate(
+              conf.mn = mean(mn.scr) )
 
 # Current Week Plots ------------------------------------------------------
 
@@ -172,8 +173,9 @@ bydiv.plot <-
 
 # History Plots -----------------------------------------------------------
 
-# Make path for saving images
+# Make path and directory for saving images
 spath <- paste0("images/week", cur.week)
+dir.create(spath, showWarnings = FALSE)
 
 # Overall History plot
 hplot <-
@@ -245,8 +247,7 @@ pups <- lapply(list.files(spath, full.names = TRUE),
                upload_image, album = album$id, token = itoken)
 
 # Pull out links
-ilinks <- data.frame(names = plots,
-                     links = unlist(lapply(pups, function(x) x$link)))
+ilinks <- data.frame(links = unlist(lapply(pups, function(x) x$link)))
 
 # Generate Reddit Comment -------------------------------------------------
 
