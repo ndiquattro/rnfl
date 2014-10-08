@@ -1,7 +1,5 @@
 # Visualization for r/NFL Power Rankings
 # Fall - 2014
-# Things that need fixing:
-#   reddit api only posts the last line of ctxt "error bars"
 
 # Load Libraries
 library(dplyr)
@@ -254,6 +252,7 @@ ilinks <- data.frame(links = unlist(lapply(pups, function(x) x$link)))
 # Function to make markdown link
 linkr <- function(txt, url){
   paste0("* [", txt, "](", url, ")")
+  #debug <- "* [Click this](http://imgur.com)"
 }
 
 # Generate body text
@@ -308,7 +307,7 @@ ahead <- paste(rtoken$token_type, rtoken$access_token, sep = " ")  # make auth
 
 POST("https://oauth.reddit.com/api/comment",
       body = list(
-        text = ctxt,
+        text = paste0(ctxt, collapse = "\n"),
         thing_id = paste0("t3_", thread.id),
         api_type = "json"),
       add_headers(Authorization = ahead),
