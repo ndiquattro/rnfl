@@ -31,7 +31,7 @@ WeekFinder <- function(curtime) {
   today <- lubridate::ymd(curtime)
 
   # Calculate which Week of the season we're in
-  return(cur.week <- lubridate::week(today) - lubridate::week(start))
+  lubridate::week(today) - lubridate::week(start)
 }
 
 # Make text file of latest week -------------------------------------------
@@ -158,8 +158,8 @@ mndiv.plot <-
 # By Division
 bydiv.plot <-
   ggplot(filter(pranks, week == cur.week),
-         aes(x = reorder(team, mn.scr), y = mn.scr, color = divrank,
-             ymin = mn.scr - sd.scr, ymax = mn.scr + sd.scr,
+         aes(x = reorder(team, ovrank), y = ovrank, color = divrank,
+             ymin = ovrank - sd.scr, ymax = ovrank + sd.scr,
              label = abbreviate(team)))+
     geom_linerange(alpha = .8)+
     geom_text(fontface = "bold")+
@@ -178,8 +178,8 @@ dir.create(spath, showWarnings = FALSE)
 # Overall History plot
 hplot <-
   ggplot(filter(pranks, week == cur.week | week == cur.week-1),
-                aes(week, ovrank, ymin = mn.scr - sd.scr,
-                     ymax = mn.scr + sd.scr, color = team, label = team))+
+                aes(week, ovrank, ymin = ovrank - sd.scr,
+                     ymax = ovrank + sd.scr, color = team, label = team))+
     geom_point(size = 4)+
     geom_line(size = 2)+
     geom_text(data = pranks[pranks$week == cur.week, ],
@@ -194,9 +194,9 @@ hplot <-
 HistPlot <- function(div){
   cplot <- ggplot(pranks[pranks$cd == div, ],
                   aes(x = week,
-                      y = mn.scr,
-                      ymin = mn.scr - sd.scr,
-                      ymax = mn.scr + sd.scr,
+                      y = ovrank,
+                      ymin = ovrank - sd.scr,
+                      ymax = ovrank + sd.scr,
                       color = team,
                       label = team))+
           geom_line()+
